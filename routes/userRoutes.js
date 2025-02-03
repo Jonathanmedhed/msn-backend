@@ -1,17 +1,76 @@
 // routes/userRoutes.js
 const express = require("express");
 const router = express.Router();
-const User = require("../models/User");
 const multer = require("multer");
-const path = require("path");
+const cloudinary = require("cloudinary").v2;
+const fs = require("fs");
+const bcrypt = require("bcryptjs");
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const User = require("../models/User");
+
+// Create a new user
+router.post("/register", async (req, res) => {
+  try {
+    const { name, email, password, phoneNumber, dateOfBirth, gender } =
+      req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: "Email already in use" });
+    }
+
+    // Hash the password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create the new user
+    const newUser = new User({
+      name,
+      email,
+      password: hashedPassword,
+      phoneNumber,
+      dateOfBirth,
+      gender,
+    });
+
+    // Save user to database
+    await newUser.save();
+
+    res.status(201).json({
+      message: "User registered successfully",
+      user: { id: newUser._id, name: newUser.name, email: newUser.email },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Update user profile
 router.put("/:userId/update", async (req, res) => {
   try {
     const { userId } = req.params;
-    const { name, profilePicture, pictures, bio, customMessage, status } =
-      req.body;
+    const {
+      name,
+      profilePicture,
+      pictures,
+      bio,
+      customMessage,
+      status,
+      phoneNumber,
+      dateOfBirth,
+      gender,
+      socialMedia,
+      preferences,
+    } = req.body;
 
+    // Find the user and update their fields
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
@@ -21,14 +80,24 @@ router.put("/:userId/update", async (req, res) => {
         bio,
         customMessage,
         status,
-        updatedAt: Date.now(),
+        phoneNumber,
+        dateOfBirth,
+        gender,
+        socialMedia,
+        preferences,
+        updatedAt: Date.now(), // Ensure the updatedAt field is updated
       },
       { new: true } // Return the updated user
     );
 
-    res
-      .status(200)
-      .json({ message: "Profile updated successfully", user: updatedUser });
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -102,42 +171,10 @@ router.post("/:userId/add-picture", async (req, res) => {
   }
 });
 
-// Upload multiple pictures
+// Upload multiple pictures to Cloudinary
 router.post(
   "/:userId/upload-pictures",
-  upload.array("pictures", 10),
-  async (req, res) => {
-    try {
-      const { userId } = req.params;
-      const pictureUrls = req.files.map((file) => file.path); // Array of file paths
-
-      const updatedUser = await User.findByIdAndUpdate(
-        userId,
-        { $push: { pictures: { $each: pictureUrls } }, updatedAt: Date.now() }, // Add all pictures to the array
-        { new: true }
-      );
-
-      res
-        .status(200)
-        .json({ message: "Pictures uploaded successfully", user: updatedUser });
-    } catch (err) {
-      res.status(400).json({ error: err.message });
-    }
-  }
-);
-
-const cloudinary = require("cloudinary").v2;
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
-// Upload images to Cloudinary
-router.post(
-  "/:userId/upload-pictures",
-  upload.array("pictures", 10),
+  upload.array("pictures", 10), // Allow up to 10 files
   async (req, res) => {
     try {
       const { userId } = req.params;
@@ -145,19 +182,24 @@ router.post(
 
       // Upload each file to Cloudinary
       for (const file of req.files) {
-        const result = await cloudinary.uploader.upload(file.path);
+        const result = await cloudinary.uploader.upload(file.path); // Upload to Cloudinary
         pictureUrls.push(result.secure_url); // Store the Cloudinary URL
+
+        // Delete the local file after uploading to Cloudinary
+        fs.unlinkSync(file.path);
       }
 
+      // Update the user's pictures array
       const updatedUser = await User.findByIdAndUpdate(
         userId,
         { $push: { pictures: { $each: pictureUrls } }, updatedAt: Date.now() },
         { new: true }
       );
 
-      res
-        .status(200)
-        .json({ message: "Pictures uploaded successfully", user: updatedUser });
+      res.status(200).json({
+        message: "Pictures uploaded successfully",
+        user: updatedUser,
+      });
     } catch (err) {
       res.status(400).json({ error: err.message });
     }

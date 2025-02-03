@@ -3,39 +3,7 @@ const router = express.Router();
 const Message = require("../models/Message");
 const Chat = require("../models/Chat");
 
-// Send a message
-router.post("/send", async (req, res) => {
-  try {
-    const { senderId, recipientId, content } = req.body;
-    const message = new Message({
-      sender: senderId,
-      recipient: recipientId,
-      content,
-    });
-    await message.save();
-    res.status(201).json({ message: "Message sent successfully" });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Get messages between two users
-router.get("/messages/:senderId/:recipientId", async (req, res) => {
-  try {
-    const { senderId, recipientId } = req.params;
-    const messages = await Message.find({
-      $or: [
-        { sender: senderId, recipient: recipientId },
-        { sender: recipientId, recipient: senderId },
-      ],
-    }).sort({ timestamp: 1 });
-    res.status(200).json(messages);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Create a new chat
+// Create a new chat (with participants)
 router.post("/create", async (req, res) => {
   try {
     const { participantIds } = req.body; // Array of user IDs participating in the chat
@@ -90,6 +58,22 @@ router.get("/user/:userId", async (req, res) => {
       .populate("participants", "name email") // Populate participant details
       .populate("lastMessage"); // Populate last message details
     res.status(200).json(chats);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Get messages between two users
+router.get("/messages/:senderId/:recipientId", async (req, res) => {
+  try {
+    const { senderId, recipientId } = req.params;
+    const messages = await Message.find({
+      $or: [
+        { sender: senderId, recipient: recipientId },
+        { sender: recipientId, recipient: senderId },
+      ],
+    }).sort({ timestamp: 1 });
+    res.status(200).json(messages);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
