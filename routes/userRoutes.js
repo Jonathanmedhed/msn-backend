@@ -14,6 +14,47 @@ cloudinary.config({
 
 const User = require("../models/User");
 
+// Login user (authenticate)
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Check if the user exists
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
+
+    // Compare the password with the hashed password stored in the database
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
+
+    // Generate JWT token (this token will be used for authentication)
+    const token = jwt.sign(
+      { userId: user._id }, // Payload (user id)
+      process.env.JWT_SECRET, // Secret key (store this in an environment variable)
+      { expiresIn: "1h" } // Token expiration time
+    );
+
+    // Send success response with the user info and token
+    res.status(200).json({
+      message: "Login successful",
+      token, // Include the token in the response
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        profilePicture: user.profilePicture,
+        status: user.status,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Create a new user
 router.post("/register", async (req, res) => {
   try {
@@ -205,5 +246,52 @@ router.post(
     }
   }
 );
+
+// Delete a user
+const jwt = require("jsonwebtoken");
+
+// Middleware to authenticate JWT token
+const authenticateJWT = (req, res, next) => {
+  const token = req.header("Authorization");
+
+  if (!token) {
+    return res.status(403).json({ error: "No token provided" });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid token" });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// Apply authentication middleware to delete route
+router.delete("/:userId/delete", authenticateJWT, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Only allow user to delete their own account or an admin
+    if (req.user.userId !== userId && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ error: "You are not authorized to delete this account" });
+    }
+
+    const deletedUser = await User.findByIdAndDelete(userId);
+
+    if (!deletedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "User deleted successfully",
+      userId: deletedUser._id,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
