@@ -1,3 +1,4 @@
+//Message.js
 const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema({
@@ -6,5 +7,13 @@ const messageSchema = new mongoose.Schema({
   content: { type: String, required: true }, // Message content
   timestamp: { type: Date, default: Date.now }, // Timestamp of the message
 });
+
+// Create a virtual 'id' field that mirrors '_id'
+messageSchema.virtual("id").get(function () {
+  return this._id.toHexString();
+});
+
+// Ensure the virtual field is included in JSON responses
+messageSchema.set("toJSON", { virtuals: true });
 
 module.exports = mongoose.model("Message", messageSchema);

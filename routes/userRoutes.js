@@ -5,6 +5,7 @@ const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const fs = require("fs");
 const bcrypt = require("bcryptjs");
+const path = require("path");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -155,26 +156,42 @@ router.get("/:userId", async (req, res) => {
   }
 });
 
-// Set up storage for uploaded files
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/profile-pictures/");
+    cb(null, "uploads/"); // Specify where files should be stored
   },
   filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
+    cb(null, Date.now() + path.extname(file.originalname)); // Give the file a unique name
   },
 });
 
-const upload = multer({ storage });
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Invalid file type, only images are allowed"), false);
+  }
+};
 
-// Upload profile picture
+const upload = multer({ storage, fileFilter });
+
+// Route to upload profile picture
 router.post(
   "/:userId/upload-profile-picture",
   upload.single("profilePicture"),
   async (req, res) => {
     try {
+      console.log("Received file:", req.file);
+
+      if (!req.file) {
+        console.log("No file uploaded");
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
       const { userId } = req.params;
-      const profilePicture = req.file.path; // Path to the uploaded file
+      const profilePicture = path.normalize(req.file.path);
+
+      console.log("Updating user with profile picture:", profilePicture);
 
       const updatedUser = await User.findByIdAndUpdate(
         userId,
@@ -182,35 +199,23 @@ router.post(
         { new: true }
       );
 
+      if (!updatedUser) {
+        console.log("User not found");
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      console.log("User updated successfully:", updatedUser);
+
       res.status(200).json({
         message: "Profile picture uploaded successfully",
         user: updatedUser,
       });
     } catch (err) {
-      res.status(400).json({ error: err.message });
+      console.error("Upload error:", err);
+      res.status(500).json({ error: err.message });
     }
   }
 );
-
-// Add a picture to the user's pictures array
-router.post("/:userId/add-picture", async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { pictureUrl } = req.body; // URL of the new picture
-
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { $push: { pictures: pictureUrl }, updatedAt: Date.now() },
-      { new: true }
-    );
-
-    res
-      .status(200)
-      .json({ message: "Picture added successfully", user: updatedUser });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
 
 // Upload multiple pictures to Cloudinary
 router.post(
@@ -272,18 +277,21 @@ router.delete("/:userId/delete", authenticateJWT, async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Only allow user to delete their own account or an admin
+    // Check if the user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Only allow the user to delete their own account or an admin
     if (req.user.userId !== userId && req.user.role !== "admin") {
       return res
         .status(403)
         .json({ error: "You are not authorized to delete this account" });
     }
 
+    // Delete the user
     const deletedUser = await User.findByIdAndDelete(userId);
-
-    if (!deletedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
 
     res.status(200).json({
       message: "User deleted successfully",

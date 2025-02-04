@@ -1,88 +1,173 @@
-const request = require("supertest"); // Import the supertest library for making HTTP requests in tests
-const { app } = require("../server"); // Import the express app from the server.js file (with the change made above)
-const mongoose = require("mongoose"); // Import mongoose to connect and disconnect from the DB
-
-let userId1, userId2, chatId; // Placeholder for user IDs and chat ID used in the tests
-
-beforeAll(async () => {
-  // Connect to the test database before running tests
-  await mongoose.connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
-
-  // Create mock users in the database before tests
-  const user1 = await request(app).post("/api/user/register").send({
-    name: "User One",
-    email: "user1@example.com",
-    password: "password123",
-  });
-  userId1 = user1.body.user.id;
-
-  const user2 = await request(app).post("/api/user/register").send({
-    name: "User Two",
-    email: "user2@example.com",
-    password: "password123",
-  });
-  userId2 = user2.body.user.id;
-});
-
-afterAll(async () => {
-  // Disconnect from the test database after tests
-  await mongoose.connection.dropDatabase(); // Optionally drop the database after the tests
-  await mongoose.disconnect();
-});
+const request = require("supertest");
+const mongoose = require("mongoose");
+const app = require("../server").app;
+const Chat = require("../models/Chat");
+const Message = require("../models/Message");
+const User = require("../models/User");
 
 describe("Chat Routes", () => {
-  it("should create a new chat", async () => {
-    const response = await request(app)
-      .post("/api/chats/create")
-      .send({ participantIds: [userId1, userId2] });
-    chatId = response.body.chat._id; // Store the created chat ID for further tests
-    expect(response.status).toBe(201); // Assert that the status code is 201 (created)
-    expect(response.body.message).toBe("Chat created successfully");
-    expect(response.body.chat.participants).toHaveLength(2); // Check if the participants are set correctly
+  let chatId;
+  let userId1;
+  let userId2;
+  let messageId;
+
+  beforeAll(async () => {
+    // Connect to the test database
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+
+    // Clear all collections before running tests
+    await Chat.deleteMany({});
+    await Message.deleteMany({});
+    await User.deleteMany({});
+
+    // Create two test users with unique emails
+    const user1 = new User({
+      name: "User One",
+      email: `user1-${Date.now()}@example.com`, // Unique email
+      password: "password123",
+    });
+    const user2 = new User({
+      name: "User Two",
+      email: `user2-${Date.now()}@example.com`, // Unique email
+      password: "password123",
+    });
+    await user1.save();
+    await user2.save();
+    userId1 = user1._id;
+    userId2 = user2._id;
   });
 
-  it("should send a message in the chat", async () => {
-    const response = await request(app)
-      .post(`/api/chats/${chatId}/send`)
-      .send({ senderId: userId1, content: "Hello, User Two!" });
-
-    console.log("Response body:", response.body); // Log the full response body
-
-    expect(response.status).toBe(201);
-
-    // Check if the content is in the response, under the correct path
-    expect(response.body.message.content).toBe("Hello, User Two!");
-    expect(response.body.message._id).toBeDefined();
+  afterAll(async () => {
+    // Close the MongoDB connection
+    await mongoose.connection.close();
   });
 
-  it("should get all messages in a chat", async () => {
-    const response = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .send();
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveLength(1); // Only one message should exist in the chat
+  // Test creating a new chat
+  describe("POST /api/chats/create", () => {
+    it("should create a new chat with participants", async () => {
+      const res = await request(app)
+        .post("/api/chats/create")
+        .send({ participantIds: [userId1, userId2] });
+
+      expect(res.statusCode).toEqual(201);
+      expect(res.body).toHaveProperty("message", "Chat created successfully");
+      expect(res.body.chat).toHaveProperty("participants");
+      expect(res.body.chat.participants.length).toEqual(2);
+
+      chatId = res.body.chat._id; // Save the chat ID for later tests
+    });
+
+    it("should return an error if participantIds are missing", async () => {
+      const res = await request(app).post("/api/chats/create").send({});
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toHaveProperty("error");
+    });
   });
 
-  it("should get all chats for a user", async () => {
-    const response = await request(app)
-      .get(`/api/chats/user/${userId1}`)
-      .send();
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveLength(1); // There should be one chat with the two users
+  // Test sending a message in a chat
+  describe("POST /api/chats/:chatId/send", () => {
+    it("should send a message in a chat", async () => {
+      const res = await request(app)
+        .post(`/api/chats/${chatId}/send`)
+        .send({ senderId: userId1, content: "Hello, User Two!" });
+
+      expect(res.statusCode).toEqual(201);
+      expect(res.body).toHaveProperty(
+        "successMessage",
+        "Message sent successfully"
+      ); // Updated key
+      expect(res.body.message).toHaveProperty("content", "Hello, User Two!");
+
+      messageId = res.body.message._id; // Save the message ID for later tests
+    });
+
+    it("should return an error if senderId or content is missing", async () => {
+      const res = await request(app)
+        .post(`/api/chats/${chatId}/send`)
+        .send({ senderId: userId1 });
+
+      expect(res.statusCode).toEqual(400);
+      expect(res.body).toHaveProperty("error");
+    });
   });
 
-  it("should get messages between two users", async () => {
-    const response = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .send();
+  // Test getting all messages in a chat
+  describe("GET /api/chats/:chatId/messages", () => {
+    it("should get all messages in a chat", async () => {
+      const res = await request(app).get(`/api/chats/${chatId}/messages`);
 
-    console.log("Messages between users:", response.body); // Log to see the response
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.length).toBeGreaterThan(0);
+      expect(res.body[0]).toHaveProperty("content", "Hello, User Two!");
+    });
 
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveLength(1); // Ensure the correct number of messages
-    expect(response.body[0].content).toBe("Hello, User Two!"); // Ensure the message is correct
+    it("should return an empty array if the chat has no messages", async () => {
+      const newChat = new Chat({ participants: [userId1, userId2] });
+      await newChat.save();
+
+      const res = await request(app).get(`/api/chats/${newChat._id}/messages`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.length).toEqual(0);
+    });
+  });
+
+  // Test getting all chats for a user
+  describe("GET /api/chats/user/:userId", () => {
+    it("should get all chats for a user", async () => {
+      const res = await request(app).get(`/api/chats/user/${userId1}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.length).toBeGreaterThan(0);
+      expect(res.body[0]).toHaveProperty("participants");
+      expect(res.body[0].participants.length).toEqual(2);
+    });
+
+    it("should return an empty array if the user has no chats", async () => {
+      const newUser = new User({
+        name: "User Three",
+        email: `user3-${Date.now()}@example.com`, // Unique email
+        password: "password123",
+      });
+      await newUser.save();
+
+      const res = await request(app).get(`/api/chats/user/${newUser._id}`);
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.length).toEqual(0);
+    });
+  });
+
+  // Test getting messages between two users
+  describe("GET /api/chats/messages/:senderId/:recipientId", () => {
+    it("should get messages between two users", async () => {
+      const res = await request(app).get(
+        `/api/chats/messages/${userId1}/${userId2}`
+      );
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.length).toBeGreaterThan(0);
+      expect(res.body[0]).toHaveProperty("content", "Hello, User Two!");
+    });
+
+    it("should return an empty array if no messages exist between the users", async () => {
+      const newUser = new User({
+        name: "User Four",
+        email: `user4-${Date.now()}@example.com`, // Unique email
+        password: "password123",
+      });
+      await newUser.save();
+
+      const res = await request(app).get(
+        `/api/chats/messages/${userId1}/${newUser._id}`
+      );
+
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.length).toEqual(0);
+    });
   });
 });

@@ -1,3 +1,4 @@
+//server.js
 const http = require("http");
 const socketIo = require("socket.io");
 const CryptoJS = require("crypto-js");
@@ -23,7 +24,7 @@ app.use(express.json());
 
 // Routes
 app.use("/api/chats", chatRoutes);
-app.use("/api/user", userRoutes);
+app.use("/api/users", userRoutes);
 
 // Encryption and Decryption
 const encryptMessage = (message) => {

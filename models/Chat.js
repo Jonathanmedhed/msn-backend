@@ -1,3 +1,4 @@
+//Chat.js
 const mongoose = require("mongoose");
 
 const chatSchema = new mongoose.Schema({
@@ -9,5 +10,13 @@ const chatSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }, // Timestamp of chat creation
   updatedAt: { type: Date, default: Date.now }, // Timestamp of last activity
 });
+
+// Create a virtual 'id' field that mirrors '_id'
+chatSchema.virtual("id").get(function () {
+  return this._id.toHexString();
+});
+
+// Ensure the virtual field is included in JSON responses
+chatSchema.set("toJSON", { virtuals: true });
 
 module.exports = mongoose.model("Chat", chatSchema);
