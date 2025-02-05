@@ -4,10 +4,12 @@ const mongoose = require("mongoose");
 const { app } = require("../server"); // Import the app from server.js
 const User = require("../models/User");
 const path = require("path");
+const fs = require("fs");
 
 describe("User Routes", () => {
   let userId;
   let token;
+  let uploadedFiles = []; // Array to store paths of uploaded files
 
   beforeAll(async () => {
     console.log("Connecting to the database...");
@@ -48,6 +50,17 @@ describe("User Routes", () => {
     console.log("Closing the database connection...");
     await mongoose.connection.close();
     console.log("Database connection closed.");
+
+    // Clean up the uploaded files
+    uploadedFiles.forEach((filePath) => {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath); // Delete the file
+        console.log(`Deleted file: ${filePath}`);
+      } else {
+        console.log(`File not found: ${filePath}`);
+      }
+    });
+    console.log("Uploaded files cleaned up.");
   });
 
   // Test user registration
@@ -201,6 +214,14 @@ describe("User Routes", () => {
       );
       expect(res.body.user).toHaveProperty("profilePicture");
 
+      // Save the uploaded file path for cleanup
+      const uploadedFilePath = path.resolve(
+        __dirname,
+        "../uploads",
+        res.body.user.profilePicture
+      );
+      uploadedFiles.push(uploadedFilePath);
+
       console.log("Profile picture upload test passed.");
     });
 
@@ -237,6 +258,16 @@ describe("User Routes", () => {
         "Pictures uploaded successfully"
       );
       expect(res.body.user.pictures.length).toBeGreaterThanOrEqual(2);
+
+      // Save the uploaded file paths for cleanup
+      res.body.user.pictures.forEach((picturePath) => {
+        const uploadedFilePath = path.resolve(
+          __dirname,
+          "../uploads",
+          picturePath
+        );
+        uploadedFiles.push(uploadedFilePath);
+      });
 
       console.log("Multiple pictures upload test passed.");
     });

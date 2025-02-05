@@ -10,7 +10,7 @@ describe("Chat Routes", () => {
   let chatId;
   let userId1;
   let userId2;
-  let messageId;
+  let uploadedFiles = []; // Array to store paths of uploaded files
 
   beforeAll(async () => {
     console.log("Connecting to the database...");
@@ -48,6 +48,17 @@ describe("Chat Routes", () => {
     console.log("Closing the database connection...");
     await mongoose.connection.close();
     console.log("Database connection closed.");
+
+    // Clean up the uploaded files
+    uploadedFiles.forEach((filePath) => {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath); // Delete the file
+        console.log(`Deleted file: ${filePath}`);
+      } else {
+        console.log(`File not found: ${filePath}`);
+      }
+    });
+    console.log("Uploaded files cleaned up.");
   });
 
   // Test creating a new chat
