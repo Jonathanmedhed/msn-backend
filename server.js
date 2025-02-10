@@ -1,35 +1,75 @@
-const http = require("http");
-const socketIo = require("socket.io");
-const express = require("express");
-const mongoose = require("mongoose");
-require("dotenv").config();
+// Socket.IO Connection Handler
+io.on("connection", (socket) => {
+  console.log("New client connected:", socket.id);
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+  socket.on("joinChat", async ({ chatId }) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        throw new Error("Invalid chat ID");
+      }
 
-// Middleware, routes, and other setup
-app.use(express.json());
+      socket.join(chatId);
+      console.log(`User joined chat ${chatId}`);
 
-// Import routes
-const chatRoutes = require("./routes/chatRoutes");
-const userRoutes = require("./routes/userRoutes");
+      const messages = await Message.find({ chat: chatId })
+        .sort({ createdAt: 1 })
+        .populate("sender", "name profilePicture");
 
-// Use routes
-app.use("/api/chats", chatRoutes);
-app.use("/api/users", userRoutes);
+      socket.emit("chatHistory", messages);
+    } catch (error) {
+      console.error("Join chat error:", error.message);
+      socket.emit("error", { message: error.message });
+    }
+  });
 
-// Connect to MongoDB
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+  socket.on("sendMessage", async (messageData) => {
+    try {
+      const { chatId, senderId, content } = messageData;
 
-// Export app and server for use in tests
-module.exports = { app, server };
+      const message = new Message({
+        chat: chatId,
+        sender: senderId,
+        content: content.trim(),
+        status: "sent",
+      });
 
-// Start the server only if this file is run directly (not required by another module)
-if (require.main === module) {
-  const PORT = process.env.PORT || 5000;
-  server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}
+      await message.save();
+
+      await Chat.findByIdAndUpdate(chatId, {
+        lastMessage: message._id,
+        updatedAt: Date.now(),
+      });
+
+      const populatedMessage = await Message.findById(message._id).populate(
+        "sender",
+        "name profilePicture"
+      );
+
+      io.to(chatId).emit("newMessage", populatedMessage);
+    } catch (error) {
+      console.error("Message error:", error.message);
+      socket.emit("error", { message: error.message });
+    }
+  });
+
+  socket.on("updateMessageStatus", async ({ messageId, status }) => {
+    try {
+      const updatedMessage = await Message.findByIdAndUpdate(
+        messageId,
+        { status },
+        { new: true }
+      ).populate("sender", "name profilePicture");
+
+      io.to(updatedMessage.chat.toString()).emit(
+        "messageStatus",
+        updatedMessage
+      );
+    } catch (error) {
+      console.error("Status update error:", error.message);
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
+});

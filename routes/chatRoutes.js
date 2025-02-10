@@ -1,112 +1,103 @@
-//routes/chatRoutes.js
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 const Message = require("../models/Message");
 const Chat = require("../models/Chat");
 
-// Create a new chat (with participants)
+// Create a new chat
 router.post("/create", async (req, res) => {
   try {
     const { participantIds } = req.body;
 
-    // Validate participantIds
-    if (
-      !participantIds ||
-      !Array.isArray(participantIds) ||
-      participantIds.length === 0
-    ) {
-      return res.status(400).json({
-        error: "participantIds is required and must be a non-empty array",
-      });
+    if (!participantIds || !Array.isArray(participantIds)) {
+      return res.status(400).json({ error: "Invalid participant IDs" });
+    }
+
+    // Check for existing chat
+    const existingChat = await Chat.findOne({
+      participants: { $all: participantIds },
+      $size: participantIds.length,
+    });
+
+    if (existingChat) {
+      return res.status(200).json(existingChat);
     }
 
     const chat = new Chat({ participants: participantIds });
     await chat.save();
-    res.status(201).json({ message: "Chat created successfully", chat });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+
+    res.status(201).json(chat);
+  } catch (error) {
+    console.error("Error creating chat:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Send a message in a chat
+// Send a message
 router.post("/:chatId/send", async (req, res) => {
   try {
     const { chatId } = req.params;
     const { senderId, content } = req.body;
 
-    // Validate required fields
-    if (!senderId || !content) {
-      return res
-        .status(400)
-        .json({ error: "senderId and content are required" });
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+      return res.status(400).json({ error: "Invalid chat ID" });
     }
 
-    // Create the message
-    const message = new Message({ chat: chatId, sender: senderId, content });
-    await message.save();
-
-    // Update the chat with the new message
-    await Chat.findByIdAndUpdate(chatId, {
-      $push: { messages: message._id },
-      $set: { lastMessage: message._id, updatedAt: Date.now() },
+    const message = new Message({
+      chat: chatId,
+      sender: senderId,
+      content,
     });
 
-    res
-      .status(201)
-      .json({ successMessage: "Message sent successfully", message });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+    await message.save();
+
+    // Update chat's last message and timestamp
+    await Chat.findByIdAndUpdate(chatId, {
+      lastMessage: message._id,
+      updatedAt: Date.now(),
+    });
+
+    res.status(201).json(message);
+  } catch (error) {
+    console.error("Error sending message:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Get all messages in a chat
+// Get chat messages
 router.get("/:chatId/messages", async (req, res) => {
   try {
     const { chatId } = req.params;
-    const messages = await Message.find({ chat: chatId }).sort({
-      timestamp: 1,
-    });
+
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+      return res.status(400).json({ error: "Invalid chat ID" });
+    }
+
+    const messages = await Message.find({ chat: chatId })
+      .sort({ createdAt: 1 })
+      .populate("sender", "name profilePicture");
+
     res.status(200).json(messages);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Get all chats for a user
+// Get user chats
 router.get("/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
+
     const chats = await Chat.find({ participants: userId })
-      .populate("participants", "name email") // Populate participant details
-      .populate("lastMessage"); // Populate last message details
+      .populate("participants", "name profilePicture status")
+      .populate("lastMessage")
+      .sort({ updatedAt: -1 });
+
     res.status(200).json(chats);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// Get messages between two users
-router.get("/messages/:senderId/:recipientId", async (req, res) => {
-  try {
-    const { senderId, recipientId } = req.params;
-
-    // Find the chat where both users are participants
-    const chat = await Chat.findOne({
-      participants: { $all: [senderId, recipientId] },
-    });
-
-    if (!chat) {
-      return res.status(200).json([]); // No chat found, return empty array
-    }
-
-    // Fetch messages in the chat
-    const messages = await Message.find({ chat: chat._id }).sort({
-      timestamp: 1,
-    });
-
-    res.status(200).json(messages);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+  } catch (error) {
+    console.error("Error fetching user chats:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

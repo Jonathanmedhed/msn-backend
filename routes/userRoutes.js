@@ -94,6 +94,26 @@ router.post("/register", async (req, res) => {
   }
 });
 
+// Route to get the main user with their contacts
+router.get("/main-user", async (req, res) => {
+  try {
+    // Find the main user
+    const mainUser = await User.findOne({ email: "mainuser@example.com" })
+      .populate("contacts", "name email profilePicture status bio") // Populating contacts data
+      .exec();
+
+    console.log(mainUser);
+    if (!mainUser) {
+      return res.status(404).json({ message: "Main user not found" });
+    }
+
+    res.status(200).json(mainUser);
+  } catch (error) {
+    console.error("Error fetching main user:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 // Update user profile
 router.put("/:userId/update", async (req, res) => {
   try {

@@ -1,4 +1,3 @@
-//models/User.js
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
@@ -26,6 +25,7 @@ const userSchema = new mongoose.Schema({
     theme: { type: String, default: "light" },
     notifications: { type: Boolean, default: true },
   },
+  contacts: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // New contacts field
 });
 
 userSchema.virtual("id").get(function () {
