@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const User = require("./models/User");
 require("dotenv").config();
+const bcrypt = require("bcryptjs");
 
 async function seedUsers() {
   try {
@@ -20,7 +21,7 @@ async function seedUsers() {
       {
         name: "John Doe",
         email: "john@example.com",
-        password: "password123",
+        password: bcrypt.hashSync("password123", 10),
         profilePicture: "https://randomuser.me/api/portraits/men/1.jpg",
         bio: "A random test user.",
         customMessage: "Hello, I am John!",
@@ -34,7 +35,7 @@ async function seedUsers() {
       {
         name: "Jane Doe",
         email: "jane@example.com",
-        password: "password456",
+        password: bcrypt.hashSync("password456", 10),
         profilePicture: "https://randomuser.me/api/portraits/women/1.jpg",
         bio: "Another random test user.",
         customMessage: "Hi, I'm Jane!",
@@ -54,7 +55,7 @@ async function seedUsers() {
     const mainUser = new User({
       name: "Main User",
       email: "mainuser@example.com",
-      password: "password123",
+      password: bcrypt.hashSync("password123", 10),
       profilePicture: "https://randomuser.me/api/portraits/men/2.jpg",
       bio: "This is the main user.",
       customMessage: "Hello, I'm the main user!",

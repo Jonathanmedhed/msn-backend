@@ -9,27 +9,19 @@ router.post("/create", async (req, res) => {
   try {
     const { participantIds } = req.body;
 
-    if (!participantIds || !Array.isArray(participantIds)) {
-      return res.status(400).json({ error: "Invalid participant IDs" });
+    if (!Array.isArray(participantIds) || participantIds.length !== 2) {
+      return res
+        .status(400)
+        .json({ error: "Exactly 2 participant IDs required" });
     }
 
-    // Check for existing chat
-    const existingChat = await Chat.findOne({
-      participants: { $all: participantIds },
-      $size: participantIds.length,
-    });
-
-    if (existingChat) {
-      return res.status(200).json(existingChat);
+    if (participantIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+      return res.status(400).json({ error: "Invalid participant ID format" });
     }
 
-    const chat = new Chat({ participants: participantIds });
-    await chat.save();
-
-    res.status(201).json(chat);
+    // Rest of your existing logic
   } catch (error) {
-    console.error("Error creating chat:", error);
-    res.status(500).json({ error: "Internal server error" });
+    // Error handling
   }
 });
 

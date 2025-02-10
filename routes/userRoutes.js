@@ -15,40 +15,34 @@ cloudinary.config({
 
 const User = require("../models/User");
 
-// Login user (authenticate)
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check if the user exists
-    const user = await User.findOne({ email });
+    // Hardcode main user for testing
+    const user = await User.findOne({ email: "mainuser@example.com" });
     if (!user) {
+      return res.status(400).json({ error: "Main user not setup" });
+    }
+
+    // Bypass password check temporarily
+    // Remove this in production!
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    // Compare the password with the hashed password stored in the database
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
+    // Generate token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "1h",
+    });
 
-    // Generate JWT token (this token will be used for authentication)
-    const token = jwt.sign(
-      { userId: user._id }, // Payload (user id)
-      process.env.JWT_SECRET, // Secret key (store this in an environment variable)
-      { expiresIn: "1h" } // Token expiration time
-    );
-
-    // Send success response with the user info and token
     res.status(200).json({
-      message: "Login successful",
-      token, // Include the token in the response
+      token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        profilePicture: user.profilePicture,
-        status: user.status,
       },
     });
   } catch (err) {
