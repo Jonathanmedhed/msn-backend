@@ -1,3 +1,48 @@
+const http = require("http");
+const socketIo = require("socket.io");
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+require("dotenv").config();
+
+// Import models
+const Message = require("./models/Message");
+const Chat = require("./models/Chat");
+
+const app = express();
+const server = http.createServer(app);
+
+// Middleware setup
+app.use((req, res, next) => {
+  console.log(`Incoming request: ${req.method} ${req.url}`);
+  const originalSend = res.send;
+  res.send = function (body) {
+    console.log(`Response for ${req.method} ${req.url}:`, body);
+    originalSend.call(this, body);
+  };
+  next();
+});
+
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+    allowedHeaders: "Content-Type,Authorization",
+  })
+);
+
+app.use(express.json());
+
+// Socket.IO Configuration
+const io = socketIo(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+});
+
 // Socket.IO Connection Handler
 io.on("connection", (socket) => {
   console.log("New client connected:", socket.id);
@@ -73,3 +118,27 @@ io.on("connection", (socket) => {
     console.log("Client disconnected:", socket.id);
   });
 });
+
+// Routes
+const chatRoutes = require("./routes/chatRoutes");
+const userRoutes = require("./routes/userRoutes");
+app.use("/api/chats", chatRoutes);
+app.use("/api/users", userRoutes);
+
+// MongoDB Connection
+mongoose
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log("Connected to MongoDB"))
+  .catch((err) => {
+    console.error("MongoDB connection error:", err);
+    process.exit(1);
+  });
+
+// Server Start
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+module.exports = { app, server };
