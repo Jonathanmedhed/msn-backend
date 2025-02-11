@@ -34,9 +34,10 @@ router.post("/login", async (req, res) => {
 
     // Generate token
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1h",
+      expiresIn: "1000h",
     });
 
+    // Respond with the token and user data
     res.status(200).json({
       token,
       user: {
@@ -96,7 +97,6 @@ router.get("/main-user", async (req, res) => {
       .populate("contacts", "name email profilePicture status bio") // Populating contacts data
       .exec();
 
-    console.log(mainUser);
     if (!mainUser) {
       return res.status(404).json({ message: "Main user not found" });
     }

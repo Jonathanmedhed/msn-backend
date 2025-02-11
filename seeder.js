@@ -74,6 +74,11 @@ async function seedUsers() {
     // Verify the main user
     const verifiedUser = await User.findById(mainUser._id).populate("contacts");
     console.log("Main user contacts:", verifiedUser.contacts.length);
+    console.log("Main user ID:", mainUser._id);
+    console.log(
+      "Contact IDs:",
+      insertedUsers.map((u) => u._id)
+    );
   } catch (error) {
     console.error("\nSEEDING ERROR:", error.message);
     console.error("Error details:", error);

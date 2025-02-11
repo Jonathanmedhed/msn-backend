@@ -9,7 +9,12 @@ router.post("/create", async (req, res) => {
   try {
     const { participantIds } = req.body;
 
-    if (!Array.isArray(participantIds) || participantIds.length !== 2) {
+    // Enhanced validation
+    if (!Array.isArray(participantIds)) {
+      return res.status(400).json({ error: "participantIds must be an array" });
+    }
+
+    if (participantIds.length !== 2) {
       return res
         .status(400)
         .json({ error: "Exactly 2 participant IDs required" });
@@ -19,9 +24,29 @@ router.post("/create", async (req, res) => {
       return res.status(400).json({ error: "Invalid participant ID format" });
     }
 
-    // Rest of your existing logic
+    // Check for existing chat
+    const existingChat = await Chat.findOne({
+      participants: {
+        $all: participantIds,
+        $size: 2,
+      },
+    });
+
+    if (existingChat) {
+      return res.status(200).json(existingChat);
+    }
+
+    // Create new chat
+    const chat = new Chat({
+      participants: participantIds,
+      createdAt: Date.now(),
+    });
+
+    await chat.save();
+    res.status(201).json(chat);
   } catch (error) {
-    // Error handling
+    console.error("Chat creation error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -34,14 +59,21 @@ router.post("/:chatId/send", async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(chatId)) {
       return res.status(400).json({ error: "Invalid chat ID" });
     }
+    if (!mongoose.Types.ObjectId.isValid(senderId)) {
+      return res.status(400).json({ error: "Invalid sender ID" });
+    }
 
     const message = new Message({
       chat: chatId,
       sender: senderId,
       content,
+      status: "sent",
     });
 
     await message.save();
+
+    // Optionally populate the sender field
+    await message.populate("sender", "_id name avatar");
 
     // Update chat's last message and timestamp
     await Chat.findByIdAndUpdate(chatId, {
@@ -59,19 +91,15 @@ router.post("/:chatId/send", async (req, res) => {
 // Get chat messages
 router.get("/:chatId/messages", async (req, res) => {
   try {
-    const { chatId } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(chatId)) {
-      return res.status(400).json({ error: "Invalid chat ID" });
-    }
-
-    const messages = await Message.find({ chat: chatId })
+    const messages = await Message.find({ chat: req.params.chatId })
       .sort({ createdAt: 1 })
-      .populate("sender", "name profilePicture");
+      .populate({
+        path: "sender",
+        select: "name profilePicture",
+      });
 
     res.status(200).json(messages);
   } catch (error) {
-    console.error("Error fetching messages:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -79,16 +107,27 @@ router.get("/:chatId/messages", async (req, res) => {
 // Get user chats
 router.get("/user/:userId", async (req, res) => {
   try {
-    const { userId } = req.params;
+    // Validate that req.params.userId is a valid ObjectId string
+    if (!mongoose.Types.ObjectId.isValid(req.params.userId)) {
+      return res.status(400).json({ error: "Invalid user id" });
+    }
 
-    const chats = await Chat.find({ participants: userId })
-      .populate("participants", "name profilePicture status")
-      .populate("lastMessage")
+    const chats = await Chat.find({
+      participants: { $in: [new mongoose.Types.ObjectId(req.params.userId)] },
+    })
+      .populate({
+        path: "participants",
+        select: "name profilePicture status",
+      })
+      .populate({
+        path: "lastMessage",
+        select: "content createdAt",
+      })
       .sort({ updatedAt: -1 });
 
     res.status(200).json(chats);
   } catch (error) {
-    console.error("Error fetching user chats:", error);
+    console.error("Error in GET /chats/user/:userId:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
