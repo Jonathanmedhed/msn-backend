@@ -108,57 +108,6 @@ router.get("/main-user", async (req, res) => {
   }
 });
 
-// Update user profile
-router.put("/:userId/update", async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const {
-      name,
-      profilePicture,
-      pictures,
-      bio,
-      customMessage,
-      status,
-      phoneNumber,
-      dateOfBirth,
-      gender,
-      socialMedia,
-      preferences,
-    } = req.body;
-
-    // Find the user and update their fields
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      {
-        name,
-        profilePicture,
-        pictures,
-        bio,
-        customMessage,
-        status,
-        phoneNumber,
-        dateOfBirth,
-        gender,
-        socialMedia,
-        preferences,
-        updatedAt: Date.now(), // Ensure the updatedAt field is updated
-      },
-      { new: true } // Return the updated user
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.status(200).json({
-      message: "Profile updated successfully",
-      user: updatedUser,
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // Get user profile
 router.get("/:userId", async (req, res) => {
   try {
@@ -189,24 +138,49 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage, fileFilter });
 
-// Route to upload profile picture
+/* ------------------------------
+   Route: Upload Profile Picture
+   ------------------------------ */
+// Route: Upload Profile Picture (using Cloudinary upload_stream)
 router.post(
   "/:userId/upload-profile-picture",
   upload.single("profilePicture"),
   async (req, res) => {
     try {
-      console.log("Received file:", req.file);
-
       if (!req.file) {
-        console.log("No file uploaded");
         return res.status(400).json({ error: "No file uploaded" });
       }
 
+      // Helper function to stream upload the file to Cloudinary
+      const streamUpload = (filePath) => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: "profile_pictures",
+              transformation: [{ width: 500, height: 500, crop: "limit" }],
+            },
+            (error, result) => {
+              if (result) {
+                resolve(result);
+              } else {
+                reject(error);
+              }
+            }
+          );
+          fs.createReadStream(filePath).pipe(stream);
+        });
+      };
+
+      // Upload the file using the streamUpload helper
+      const result = await streamUpload(req.file.path);
+
+      // Remove the temporary local file
+      fs.unlinkSync(req.file.path);
+
+      const profilePicture = result.secure_url;
       const { userId } = req.params;
-      const profilePicture = path.normalize(req.file.path);
 
-      console.log("Updating user with profile picture:", profilePicture);
-
+      // Update the user's profile picture field with the Cloudinary URL
       const updatedUser = await User.findByIdAndUpdate(
         userId,
         { profilePicture, updatedAt: Date.now() },
@@ -214,24 +188,23 @@ router.post(
       );
 
       if (!updatedUser) {
-        console.log("User not found");
         return res.status(404).json({ error: "User not found" });
       }
-
-      console.log("User updated successfully:", updatedUser);
 
       res.status(200).json({
         message: "Profile picture uploaded successfully",
         user: updatedUser,
       });
     } catch (err) {
-      console.error("Upload error:", err);
+      console.error("Profile picture upload error:", err);
       res.status(500).json({ error: err.message });
     }
   }
 );
 
-// Upload multiple pictures to Cloudinary
+/* -----------------------------
+     Route: Upload Multiple Pictures
+     ----------------------------- */
 router.post(
   "/:userId/upload-pictures",
   upload.array("pictures", 10), // Allow up to 10 files
@@ -240,19 +213,50 @@ router.post(
       const { userId } = req.params;
       const pictureUrls = [];
 
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
       // Upload each file to Cloudinary
       for (const file of req.files) {
-        const result = await cloudinary.uploader.upload(file.path); // Upload to Cloudinary
-        pictureUrls.push(result.secure_url); // Store the Cloudinary URL
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: "user_pictures",
+        });
+        pictureUrls.push(result.secure_url);
 
-        // Delete the local file after uploading to Cloudinary
+        // Delete the temporary local file after upload
         fs.unlinkSync(file.path);
       }
 
-      // Update the user's pictures array
+      // Find user and get existing pictures
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // OPTIONAL: Limit total stored pictures (e.g., max 20)
+      const maxPictures = 20;
+      let updatedPictures = [...user.pictures, ...pictureUrls];
+
+      if (updatedPictures.length > maxPictures) {
+        // Remove old pictures to maintain limit
+        const excessPictures = updatedPictures.length - maxPictures;
+        const picturesToRemove = updatedPictures.slice(0, excessPictures);
+
+        // Delete from Cloudinary
+        for (const picUrl of picturesToRemove) {
+          const publicId = picUrl.split("/").pop().split(".")[0]; // Extract ID
+          await cloudinary.uploader.destroy(`user_pictures/${publicId}`);
+        }
+
+        // Keep only the latest allowed pictures
+        updatedPictures = updatedPictures.slice(excessPictures);
+      }
+
+      // Update user's pictures array
       const updatedUser = await User.findByIdAndUpdate(
         userId,
-        { $push: { pictures: { $each: pictureUrls } }, updatedAt: Date.now() },
+        { pictures: updatedPictures, updatedAt: Date.now() },
         { new: true }
       );
 
@@ -261,10 +265,63 @@ router.post(
         user: updatedUser,
       });
     } catch (err) {
+      console.error("Pictures upload error:", err);
       res.status(400).json({ error: err.message });
     }
   }
 );
+
+// General Update Route (PUT /:userId)
+router.put("/:userId/update", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const {
+      name,
+      profilePicture, // You can update this with a URL if needed
+      pictures, // Same for pictures (if updating manually)
+      bio,
+      customMessage,
+      status,
+      phoneNumber,
+      dateOfBirth,
+      gender,
+      socialMedia,
+      preferences,
+    } = req.body;
+
+    // Update the user document with the provided fields
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        name,
+        profilePicture,
+        pictures,
+        bio,
+        customMessage,
+        status,
+        phoneNumber,
+        dateOfBirth,
+        gender,
+        socialMedia,
+        preferences,
+        updatedAt: Date.now(),
+      },
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
+  } catch (err) {
+    console.error("Profile update error:", err);
+    res.status(400).json({ error: err.message });
+  }
+});
 
 // Delete a user
 const jwt = require("jsonwebtoken");
