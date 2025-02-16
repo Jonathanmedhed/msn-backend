@@ -6,6 +6,7 @@ const cloudinary = require("cloudinary").v2;
 const fs = require("fs");
 const bcrypt = require("bcryptjs");
 const path = require("path");
+const User = require("../models/User");
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -13,7 +14,29 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const User = require("../models/User");
+const jwt = require("jsonwebtoken");
+
+// Middleware to authenticate JWT token
+const authenticateJWT = (req, res, next) => {
+  let token = req.header("Authorization");
+
+  if (!token) {
+    return res.status(403).json({ error: "No token provided" });
+  }
+
+  // Remove 'Bearer ' prefix if present
+  if (token.startsWith("Bearer ")) {
+    token = token.slice(7, token.length).trim();
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid token" });
+    }
+    req.user = user;
+    next();
+  });
+};
 
 router.post("/login", async (req, res) => {
   try {
@@ -324,25 +347,6 @@ router.put("/:userId/update", async (req, res) => {
 });
 
 // Delete a user
-const jwt = require("jsonwebtoken");
-
-// Middleware to authenticate JWT token
-const authenticateJWT = (req, res, next) => {
-  const token = req.header("Authorization");
-
-  if (!token) {
-    return res.status(403).json({ error: "No token provided" });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: "Invalid token" });
-    }
-    req.user = user;
-    next();
-  });
-};
-
 // Apply authentication middleware to delete route
 router.delete("/:userId/delete", authenticateJWT, async (req, res) => {
   try {
@@ -367,6 +371,65 @@ router.delete("/:userId/delete", authenticateJWT, async (req, res) => {
     res.status(200).json({
       message: "User deleted successfully",
       userId: deletedUser._id,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// routes/userRoutes.js
+router.put("/:userId/block-contact", authenticateJWT, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { contactId } = req.body;
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Check if contact exists
+    const contact = await User.findById(contactId);
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    // Check if the contact is already blocked
+    const isAlreadyBlocked = user.blockedContacts.some(
+      (id) => id.toString() === contactId
+    );
+
+    let updatedUser;
+    let message;
+
+    if (isAlreadyBlocked) {
+      // Unblock: remove the contact from blockedContacts using $pull
+      updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $pull: { blockedContacts: contactId } },
+        { new: true }
+      );
+      message = "Contact unblocked successfully";
+    } else {
+      // Block: add the contact to blockedContacts using $addToSet
+      updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $addToSet: { blockedContacts: contactId } },
+        { new: true }
+      );
+      message = "Contact blocked successfully";
+    }
+
+    // Optionally populate blockedContacts if needed:
+    updatedUser = await updatedUser.populate(
+      "blockedContacts",
+      "name email profilePicture"
+    );
+
+    res.status(200).json({
+      message,
+      user: updatedUser,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

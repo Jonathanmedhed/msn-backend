@@ -25,7 +25,9 @@ const userSchema = new mongoose.Schema({
     theme: { type: String, default: "light" },
     notifications: { type: Boolean, default: true },
   },
-  contacts: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // New contacts field
+  contacts: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  // New blockedContacts field:
+  blockedContacts: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 });
 
 userSchema.virtual("id").get(function () {
