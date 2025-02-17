@@ -42,7 +42,7 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find the user by the provided email
+    // Find the user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ error: "Invalid credentials" });
@@ -54,12 +54,12 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    // Generate a token with the user's ID
+    // Generate token with user's id
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
       expiresIn: "1000h",
     });
 
-    // Respond with the token and minimal user data
+    // Respond with token and user data
     res.status(200).json({
       token,
       user: {
@@ -92,11 +92,16 @@ router.get("/me", authenticateJWT, async (req, res) => {
   }
 });
 
+router.post("/logout", authenticateJWT, (req, res) => {
+  // For a JWT-based system, logout is usually handled on the client.
+  // If you use refresh tokens or token blacklisting, implement that logic here.
+  res.status(200).json({ message: "Logged out successfully" });
+});
+
 // Create a new user
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, phoneNumber, dateOfBirth, gender } =
-      req.body;
+    const { name, email, password } = req.body; // only use these fields
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -113,9 +118,6 @@ router.post("/register", async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      phoneNumber,
-      dateOfBirth,
-      gender,
     });
 
     // Save user to database
