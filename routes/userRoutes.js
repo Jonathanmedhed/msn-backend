@@ -42,25 +42,24 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Hardcode main user for testing
-    const user = await User.findOne({ email: "mainuser@example.com" });
+    // Find the user by the provided email
+    const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ error: "Main user not setup" });
+      return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    // Bypass password check temporarily
-    // Remove this in production!
+    // Compare the provided password with the stored hashed password
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    // Generate token
+    // Generate a token with the user's ID
     const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
       expiresIn: "1000h",
     });
 
-    // Respond with the token and user data
+    // Respond with the token and minimal user data
     res.status(200).json({
       token,
       user: {
@@ -69,6 +68,25 @@ router.post("/login", async (req, res) => {
         email: user.email,
       },
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/me", authenticateJWT, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId)
+      .populate(
+        "contacts",
+        "name email profilePicture customMessage status bio"
+      )
+      .exec();
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
