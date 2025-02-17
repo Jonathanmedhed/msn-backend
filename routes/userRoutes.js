@@ -377,7 +377,6 @@ router.delete("/:userId/delete", authenticateJWT, async (req, res) => {
   }
 });
 
-// routes/userRoutes.js
 router.put("/:userId/block-contact", authenticateJWT, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -429,6 +428,42 @@ router.put("/:userId/block-contact", authenticateJWT, async (req, res) => {
 
     res.status(200).json({
       message,
+      user: updatedUser,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/:userId/remove-contact", authenticateJWT, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { contactId } = req.body;
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Check if contact exists
+    const contact = await User.findById(contactId);
+    if (!contact) {
+      return res.status(404).json({ error: "Contact not found" });
+    }
+
+    // Remove contact from user's contacts list
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $pull: { contacts: contactId } },
+      { new: true }
+    ).populate("contacts", "name email profilePicture");
+
+    // Remove user from the contact's contact list as well (optional, for mutual removal)
+    await User.findByIdAndUpdate(contactId, { $pull: { contacts: userId } });
+
+    res.status(200).json({
+      message: "Contact removed successfully",
       user: updatedUser,
     });
   } catch (err) {
