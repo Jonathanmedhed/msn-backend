@@ -56,7 +56,6 @@ router.post("/:chatId/send", async (req, res) => {
   try {
     const { chatId } = req.params;
     const { senderId, content } = req.body;
-    const MAIN_USER_NAME = "Main User";
 
     if (
       !mongoose.Types.ObjectId.isValid(chatId) ||
@@ -84,43 +83,10 @@ router.post("/:chatId/send", async (req, res) => {
 
     console.log("Message sent:", userMessage);
 
-    let autoReply = null; // Store auto-reply message if applicable
-    let updatedMessages = [userMessage]; // Start with user message
+    // Build updated messages array with only the userMessage
+    const updatedMessages = [userMessage];
 
-    if (sender.name === MAIN_USER_NAME) {
-      const chat = await Chat.findById(chatId).lean();
-      if (chat) {
-        console.log("Chat found.");
-
-        const receiverId = chat.participants.find(
-          (id) => id.toString() !== senderId
-        );
-
-        if (receiverId) {
-          const receiver = await User.findById(receiverId);
-          if (receiver) {
-            console.log("Receiver found.");
-            console.log("Auto-reply from:", receiver.name);
-
-            autoReply = new Message({
-              chat: chatId,
-              sender: receiverId,
-              content: "Thank you for your message! I'll respond shortly.",
-              status: "sent",
-              createdAt: new Date(Date.now() - 5000), // Auto-reply is 5 seconds older
-            });
-
-            await autoReply.save();
-            await autoReply.populate("sender", "_id name avatar");
-
-            console.log("Auto-reply sent:", autoReply);
-            updatedMessages.push(autoReply);
-          }
-        }
-      }
-    }
-
-    // Send the full chat with updated messages before updating lastMessage in the database
+    // Retrieve the full updated chat (with populated messages)
     const fullUpdatedChat = await Chat.findById(chatId)
       .populate({
         path: "messages",
@@ -128,19 +94,20 @@ router.post("/:chatId/send", async (req, res) => {
       })
       .lean();
 
-    // Respond to the client with the updated chat
+    // Respond with the updated chat and messages
     res.status(201).json({
       chat: fullUpdatedChat,
       messages: updatedMessages,
+      message: userMessage,
     });
 
-    // Update chat last message
+    // Update chat's last message to the user's message
     await Chat.findByIdAndUpdate(chatId, {
-      lastMessage: autoReply ? autoReply._id : userMessage._id,
+      lastMessage: userMessage._id,
       updatedAt: Date.now(),
     });
 
-    // Emit socket event for real-time updates
+    // Emit a socket event for real-time updates
     const io = req.app.get("io");
     if (io) {
       io.to(chatId).emit("newMessage", updatedMessages);

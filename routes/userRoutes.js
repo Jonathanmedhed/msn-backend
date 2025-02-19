@@ -76,10 +76,7 @@ router.post("/login", async (req, res) => {
 router.get("/me", authenticateJWT, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId)
-      .populate(
-        "contacts",
-        "name email profilePicture customMessage status bio"
-      )
+      .populate("contacts", "name email pictures customMessage status bio")
       .exec();
 
     if (!user) {
@@ -137,7 +134,7 @@ router.get("/main-user", async (req, res) => {
   try {
     // Find the main user
     const mainUser = await User.findOne({ email: "mainuser@example.com" })
-      .populate("contacts", "name email profilePicture status bio") // Populating contacts data
+      .populate("contacts", "name email pictures customMessage status bio") // Populating contacts data
       .exec();
 
     if (!mainUser) {
@@ -513,7 +510,7 @@ router.put("/:userId/add-contact", authenticateJWT, async (req, res) => {
       userId,
       { $addToSet: { contacts: contact._id } },
       { new: true }
-    ).populate("contacts", "name email profilePicture status bio");
+    ).populate("contacts", "name email pictures customMessage status bio");
 
     res.status(200).json({
       message: "Contact added successfully",
