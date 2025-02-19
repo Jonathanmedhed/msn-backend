@@ -4,13 +4,11 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  profilePicture: { type: String, default: "" }, // Path to profile picture
   pictures: [{ type: String, default: [] }], // Array of pictures
   bio: { type: String, default: "" },
   customMessage: { type: String, default: "" },
-  status: { type: String, default: "Hey there! I am using this app." },
+  status: { type: String, default: "offline" },
   lastSeen: { type: Date, default: Date.now },
-  isOnline: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
   phoneNumber: { type: String, default: "" },
