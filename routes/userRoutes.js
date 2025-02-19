@@ -77,6 +77,11 @@ router.get("/me", authenticateJWT, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId)
       .populate("contacts", "name email pictures customMessage status bio")
+      .populate("friendRequestsSent", "name email")
+      .populate(
+        "friendRequestsReceived",
+        "name email pictures customMessage status bio"
+      )
       .exec();
 
     if (!user) {
@@ -520,5 +525,118 @@ router.put("/:userId/add-contact", authenticateJWT, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+/**
+ * Friend Requests
+ */
+//Send
+router.post("/friend-request", authenticateJWT, async (req, res) => {
+  try {
+    const { senderId, recipientEmail } = req.body;
+    if (!senderId || !recipientEmail) {
+      return res
+        .status(400)
+        .json({ error: "Missing senderId or recipientEmail" });
+    }
+
+    // Look up the recipient by email
+    const recipient = await User.findOne({ email: recipientEmail });
+    if (!recipient) {
+      return res.status(404).json({ error: "Recipient not found." });
+    }
+
+    // Prevent sending a request to yourself
+    if (recipient._id.toString() === senderId) {
+      return res
+        .status(400)
+        .json({ error: "Cannot send friend request to yourself." });
+    }
+
+    const sender = await User.findById(senderId);
+    if (!sender) {
+      return res.status(404).json({ error: "Sender not found." });
+    }
+
+    // Check if a friend request is already sent or if they are already friends
+    if (
+      sender.friendRequestsSent.includes(recipient._id) ||
+      recipient.friendRequestsReceived.includes(senderId) ||
+      sender.contacts.includes(recipient._id)
+    ) {
+      return res.status(400).json({
+        error: "Friend request already exists or you're already friends.",
+      });
+    }
+
+    // Add friend request
+    sender.friendRequestsSent.push(recipient._id);
+    recipient.friendRequestsReceived.push(senderId);
+
+    await sender.save();
+    await recipient.save();
+
+    res.status(200).json({ message: "Friend request sent." });
+  } catch (error) {
+    console.error("Error sending friend request:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+//Respond
+router.post(
+  "/:userId/respond-friend-request",
+  authenticateJWT,
+  async (req, res) => {
+    try {
+      const { userId } = req.params; // Should match the logged in user's ID (recipient)
+      const { senderId, action } = req.body; // Action: "accept" or "reject"
+      const recipientId = req.user.userId;
+
+      if (userId !== recipientId) {
+        return res.status(403).json({ error: "Not authorized." });
+      }
+
+      const recipient = await User.findById(recipientId);
+      const sender = await User.findById(senderId);
+
+      if (!recipient || !sender) {
+        return res.status(404).json({ error: "User not found." });
+      }
+
+      // Check if a friend request exists
+      if (!recipient.friendRequestsReceived.includes(senderId)) {
+        return res
+          .status(400)
+          .json({ error: "No friend request from this user." });
+      }
+
+      // Remove friend request from both arrays
+      recipient.friendRequestsReceived =
+        recipient.friendRequestsReceived.filter(
+          (id) => id.toString() !== senderId
+        );
+      sender.friendRequestsSent = sender.friendRequestsSent.filter(
+        (id) => id.toString() !== recipientId
+      );
+
+      if (action === "accept") {
+        // Add each other to contacts if not already added
+        if (!recipient.contacts.includes(senderId)) {
+          recipient.contacts.push(senderId);
+        }
+        if (!sender.contacts.includes(recipientId)) {
+          sender.contacts.push(recipientId);
+        }
+      }
+
+      await recipient.save();
+      await sender.save();
+
+      res.status(200).json({ message: `Friend request ${action}ed.` });
+    } catch (error) {
+      console.error("Error responding to friend request:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
 
 module.exports = router;

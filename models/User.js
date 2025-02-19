@@ -26,6 +26,10 @@ const userSchema = new mongoose.Schema({
   contacts: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   // New blockedContacts field:
   blockedContacts: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  friendRequestsSent: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  friendRequestsReceived: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  ],
 });
 
 userSchema.virtual("id").get(function () {
