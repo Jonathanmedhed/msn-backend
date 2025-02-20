@@ -639,4 +639,141 @@ router.post(
   }
 );
 
+// Accept Friend Request Route
+router.post("/friend-request/accept", authenticateJWT, async (req, res) => {
+  try {
+    // The logged in user is the recipient
+    const recipientId = req.user.userId;
+    const { senderId } = req.body; // The sender who sent the friend request
+
+    if (!senderId) {
+      return res.status(400).json({ error: "Sender ID is required." });
+    }
+
+    const recipient = await User.findById(recipientId);
+    const sender = await User.findById(senderId);
+
+    if (!recipient || !sender) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    // Check if the recipient has actually received a request from sender
+    if (!recipient.friendRequestsReceived.includes(senderId)) {
+      return res
+        .status(400)
+        .json({ error: "No friend request from this user exists." });
+    }
+
+    // Remove friend request from both arrays
+    recipient.friendRequestsReceived = recipient.friendRequestsReceived.filter(
+      (id) => id.toString() !== senderId
+    );
+    sender.friendRequestsSent = sender.friendRequestsSent.filter(
+      (id) => id.toString() !== recipientId
+    );
+
+    // Add each other to contacts if not already present
+    if (!recipient.contacts.includes(senderId)) {
+      recipient.contacts.push(senderId);
+    }
+    if (!sender.contacts.includes(recipientId)) {
+      sender.contacts.push(recipientId);
+    }
+
+    await recipient.save();
+    await sender.save();
+
+    res.status(200).json({ message: "Friend request accepted." });
+  } catch (err) {
+    console.error("Error accepting friend request:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reject Friend Request Route
+router.post("/friend-request/reject", authenticateJWT, async (req, res) => {
+  try {
+    // The logged in user is the recipient
+    const recipientId = req.user.userId;
+    const { senderId } = req.body; // The sender who sent the friend request
+
+    if (!senderId) {
+      return res.status(400).json({ error: "Sender ID is required." });
+    }
+
+    const recipient = await User.findById(recipientId);
+    const sender = await User.findById(senderId);
+
+    if (!recipient || !sender) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    // Check if the friend request exists
+    if (!recipient.friendRequestsReceived.includes(senderId)) {
+      return res
+        .status(400)
+        .json({ error: "No friend request from this user exists." });
+    }
+
+    // Remove friend request from both arrays
+    recipient.friendRequestsReceived = recipient.friendRequestsReceived.filter(
+      (id) => id.toString() !== senderId
+    );
+    sender.friendRequestsSent = sender.friendRequestsSent.filter(
+      (id) => id.toString() !== recipientId
+    );
+
+    await recipient.save();
+    await sender.save();
+
+    res.status(200).json({ message: "Friend request rejected." });
+  } catch (err) {
+    console.error("Error rejecting friend request:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cancel Sent Friend Request Route (initiated by the sender)
+router.post("/friend-request/cancel", authenticateJWT, async (req, res) => {
+  try {
+    // The logged in user is the sender
+    const senderId = req.user.userId;
+    const { recipientId } = req.body; // The recipient who received the friend request
+
+    if (!recipientId) {
+      return res.status(400).json({ error: "Recipient ID is required." });
+    }
+
+    const sender = await User.findById(senderId);
+    const recipient = await User.findById(recipientId);
+
+    if (!sender || !recipient) {
+      return res.status(404).json({ error: "User not found." });
+    }
+
+    // Check if a friend request exists
+    if (!sender.friendRequestsSent.includes(recipientId)) {
+      return res
+        .status(400)
+        .json({ error: "No friend request to this user exists." });
+    }
+
+    // Remove friend request from both arrays
+    sender.friendRequestsSent = sender.friendRequestsSent.filter(
+      (id) => id.toString() !== recipientId
+    );
+    recipient.friendRequestsReceived = recipient.friendRequestsReceived.filter(
+      (id) => id.toString() !== senderId
+    );
+
+    await sender.save();
+    await recipient.save();
+
+    res.status(200).json({ message: "Friend request canceled." });
+  } catch (err) {
+    console.error("Error canceling friend request:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
