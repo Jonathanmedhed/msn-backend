@@ -122,8 +122,10 @@ io.on("connection", (socket) => {
 // Routes
 const chatRoutes = require("./routes/chatRoutes");
 const userRoutes = require("./routes/userRoutes");
+const authRoutes = require("./routes/authRoutes");
 app.use("/api/chats", chatRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/auth", authRoutes);
 
 // MongoDB Connection
 mongoose

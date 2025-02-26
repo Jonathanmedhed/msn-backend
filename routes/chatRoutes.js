@@ -66,10 +66,8 @@ router.post("/:chatId/send", async (req, res) => {
 
     const sender = await User.findById(senderId);
     if (!sender) {
-      console.log("Sender not found.");
       return res.status(404).json({ error: "Sender not found" });
     }
-    console.log("Sender found.");
 
     // Save the user's message
     const userMessage = new Message({
@@ -80,8 +78,6 @@ router.post("/:chatId/send", async (req, res) => {
     });
     await userMessage.save();
     await userMessage.populate("sender", "_id name avatar");
-
-    console.log("Message sent:", userMessage);
 
     // Build updated messages array with only the userMessage
     const updatedMessages = [userMessage];
