@@ -55,8 +55,10 @@ router.post("/create", async (req, res) => {
 router.post("/:chatId/send", async (req, res) => {
   try {
     const { chatId } = req.params;
-    const { senderId, content } = req.body;
+    // Now we also expect an "attachments" array in the request body.
+    const { senderId, content, attachments } = req.body;
 
+    // Validate chatId and senderId
     if (
       !mongoose.Types.ObjectId.isValid(chatId) ||
       !mongoose.Types.ObjectId.isValid(senderId)
@@ -69,17 +71,19 @@ router.post("/:chatId/send", async (req, res) => {
       return res.status(404).json({ error: "Sender not found" });
     }
 
-    // Save the user's message
+    // Create new message with attachments if provided.
+    // (The Message schema now uses an "attachments" array.)
     const userMessage = new Message({
       chat: chatId,
       sender: senderId,
       content,
+      attachments: attachments || [],
       status: "sent",
     });
     await userMessage.save();
     await userMessage.populate("sender", "_id name avatar");
 
-    // Build updated messages array with only the userMessage
+    // Build updated messages array with the new message.
     const updatedMessages = [userMessage];
 
     // Retrieve the full updated chat (with populated messages)
@@ -97,7 +101,7 @@ router.post("/:chatId/send", async (req, res) => {
       message: userMessage,
     });
 
-    // Update chat's last message to the user's message
+    // Update chat's last message
     await Chat.findByIdAndUpdate(chatId, {
       lastMessage: userMessage._id,
       updatedAt: Date.now(),
