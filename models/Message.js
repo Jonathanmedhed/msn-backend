@@ -17,7 +17,7 @@ const attachmentSchema = new mongoose.Schema(
 const messageSchema = new mongoose.Schema({
   chat: { type: mongoose.Schema.Types.ObjectId, ref: "Chat", required: true },
   sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  content: { type: String, required: true },
+  content: { type: String },
   // Change from a single attachment to an array of attachments
   attachments: { type: [attachmentSchema], default: [] },
   status: {

@@ -45,7 +45,7 @@ const io = socketIo(server, {
 
 // Socket.IO Connection Handler
 io.on("connection", (socket) => {
-  console.log("New client connected:", socket.id);
+  //console.log("New client connected:", socket.id);
 
   socket.on("joinChat", async ({ chatId }) => {
     try {
@@ -54,7 +54,7 @@ io.on("connection", (socket) => {
       }
 
       socket.join(chatId);
-      console.log(`User joined chat ${chatId}`);
+      //console.log(`User joined chat ${chatId}`);
 
       const messages = await Message.find({ chat: chatId })
         .sort({ createdAt: 1 })
@@ -115,7 +115,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    console.log("Client disconnected:", socket.id);
+    //console.log("Client disconnected:", socket.id);
   });
 });
 

@@ -308,6 +308,7 @@ router.post(
       res.status(200).json({
         message: "Pictures uploaded successfully",
         user: updatedUser,
+        pictureUrls,
       });
     } catch (err) {
       console.error("Pictures upload error:", err);

@@ -55,10 +55,9 @@ router.post("/create", async (req, res) => {
 router.post("/:chatId/send", async (req, res) => {
   try {
     const { chatId } = req.params;
-    // Now we also expect an "attachments" array in the request body.
+    // Expect attachments as an array.
     const { senderId, content, attachments } = req.body;
 
-    // Validate chatId and senderId
     if (
       !mongoose.Types.ObjectId.isValid(chatId) ||
       !mongoose.Types.ObjectId.isValid(senderId)
@@ -71,20 +70,23 @@ router.post("/:chatId/send", async (req, res) => {
       return res.status(404).json({ error: "Sender not found" });
     }
 
-    // Create new message with attachments if provided.
-    // (The Message schema now uses an "attachments" array.)
+    // If content is empty and attachments exist, provide a default fallback.
+    const messageContent =
+      (content && content.trim().length > 0) ||
+      (attachments && attachments.length > 0)
+        ? content
+        : " ";
+
+    // Create the new message, including attachments.
     const userMessage = new Message({
       chat: chatId,
       sender: senderId,
-      content,
+      content: messageContent,
       attachments: attachments || [],
       status: "sent",
     });
     await userMessage.save();
     await userMessage.populate("sender", "_id name avatar");
-
-    // Build updated messages array with the new message.
-    const updatedMessages = [userMessage];
 
     // Retrieve the full updated chat (with populated messages)
     const fullUpdatedChat = await Chat.findById(chatId)
@@ -94,14 +96,13 @@ router.post("/:chatId/send", async (req, res) => {
       })
       .lean();
 
-    // Respond with the updated chat and messages
     res.status(201).json({
       chat: fullUpdatedChat,
-      messages: updatedMessages,
+      messages: [userMessage],
       message: userMessage,
     });
 
-    // Update chat's last message
+    // Update chat's last message to the user's message
     await Chat.findByIdAndUpdate(chatId, {
       lastMessage: userMessage._id,
       updatedAt: Date.now(),
@@ -110,7 +111,7 @@ router.post("/:chatId/send", async (req, res) => {
     // Emit a socket event for real-time updates
     const io = req.app.get("io");
     if (io) {
-      io.to(chatId).emit("newMessage", updatedMessages);
+      io.to(chatId).emit("newMessage", [userMessage]);
     } else {
       console.error("Socket.io instance not found.");
     }
