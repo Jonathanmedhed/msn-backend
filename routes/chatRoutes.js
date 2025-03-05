@@ -156,7 +156,7 @@ router.get("/user/:userId", async (req, res) => {
       })
       .populate({
         path: "lastMessage",
-        select: "content createdAt",
+        select: "content createdAt, attachments",
       })
       .sort({ updatedAt: -1 });
 
