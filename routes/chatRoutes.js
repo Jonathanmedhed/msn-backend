@@ -111,7 +111,7 @@ router.post("/:chatId/send", async (req, res) => {
     // Emit a socket event for real-time updates
     const io = req.app.get("io");
     if (io) {
-      io.to(chatId).emit("newMessage", [userMessage]);
+      io.to(chatId).emit("newMessage", userMessage);
     } else {
       console.error("Socket.io instance not found.");
     }

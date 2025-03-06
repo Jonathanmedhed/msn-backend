@@ -43,6 +43,8 @@ const io = socketIo(server, {
   },
 });
 
+app.set("io", io); // Add this line to make io available in routes
+
 // Socket.IO Connection Handler
 io.on("connection", (socket) => {
   //console.log("New client connected:", socket.id);
