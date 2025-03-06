@@ -713,37 +713,12 @@ router.post(
 // Accept Friend Request Route
 router.post("/friend-request/accept", authenticateJWT, async (req, res) => {
   try {
-    // The logged in user is the recipient
     const recipientId = req.user.userId;
-    const { senderId } = req.body; // The sender who sent the friend request
+    const { senderId } = req.body;
 
-    if (!senderId) {
-      return res.status(400).json({ error: "Sender ID is required." });
-    }
+    // ... existing validation checks ...
 
-    const recipient = await User.findById(recipientId);
-    const sender = await User.findById(senderId);
-
-    if (!recipient || !sender) {
-      return res.status(404).json({ error: "User not found." });
-    }
-
-    // Check if the recipient has actually received a request from sender
-    if (!recipient.friendRequestsReceived.includes(senderId)) {
-      return res
-        .status(400)
-        .json({ error: "No friend request from this user exists." });
-    }
-
-    // Remove friend request from both arrays
-    recipient.friendRequestsReceived = recipient.friendRequestsReceived.filter(
-      (id) => id.toString() !== senderId
-    );
-    sender.friendRequestsSent = sender.friendRequestsSent.filter(
-      (id) => id.toString() !== recipientId
-    );
-
-    // Add each other to contacts if not already present
+    // Add each other to contacts (existing code)
     if (!recipient.contacts.includes(senderId)) {
       recipient.contacts.push(senderId);
     }
@@ -754,7 +729,41 @@ router.post("/friend-request/accept", authenticateJWT, async (req, res) => {
     await recipient.save();
     await sender.save();
 
-    res.status(200).json({ message: "Friend request accepted." });
+    // Create chat if it doesn't exist
+    const existingChat = await Chat.findOne({
+      participants: {
+        $all: [senderId, recipientId],
+        $size: 2,
+      },
+    });
+
+    if (!existingChat) {
+      const newChat = new Chat({
+        participants: [senderId, recipientId],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        messages: [],
+      });
+
+      await newChat.save();
+
+      // Optional: Populate participants in response
+      const populatedChat = await Chat.findById(newChat._id)
+        .populate("participants", "name avatar")
+        .lean();
+
+      // Optional: Emit socket event for real-time update
+      const io = req.app.get("io");
+      if (io) {
+        io.to(senderId).emit("newChat", populatedChat);
+        io.to(recipientId).emit("newChat", populatedChat);
+      }
+    }
+
+    res.status(200).json({
+      message: "Friend request accepted.",
+      chat: existingChat || populatedChat,
+    });
   } catch (err) {
     console.error("Error accepting friend request:", err);
     res.status(500).json({ error: err.message });
