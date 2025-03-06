@@ -181,6 +181,30 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
+const fileUpload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    // Allow common file types. You can add or remove types as needed.
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new Error(
+          "Invalid file type, allowed types are: JPEG, PNG, PDF, DOC, DOCX"
+        ),
+        false
+      );
+    }
+  },
+});
+
 const upload = multer({ storage, fileFilter });
 
 /* ------------------------------
@@ -312,6 +336,52 @@ router.post(
       });
     } catch (err) {
       console.error("Pictures upload error:", err);
+      res.status(400).json({ error: err.message });
+    }
+  }
+);
+
+router.post(
+  "/:userId/upload-files",
+  fileUpload.array("files", 10), // Field name is "files" and up to 10 files
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const fileUrls = [];
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: "No files uploaded" });
+      }
+
+      // Upload each file to Cloudinary
+      for (const file of req.files) {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: "user_files",
+          resource_type: "auto", // Allow Cloudinary to auto-detect file type
+        });
+        fileUrls.push(result.secure_url);
+        // Delete the temporary local file after upload
+        fs.unlinkSync(file.path);
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const updatedFiles = [...(user.files || []), ...fileUrls];
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { files: updatedFiles, updatedAt: Date.now() },
+        { new: true }
+      );
+
+      res.status(200).json({
+        message: "Files uploaded successfully",
+        fileUrls,
+        // user: updatedUser // Uncomment if updating user
+      });
+    } catch (err) {
+      console.error("Files upload error:", err);
       res.status(400).json({ error: err.message });
     }
   }
