@@ -73,6 +73,18 @@ io.on("connection", (socket) => {
     try {
       const { chatId, senderId, content } = messageData;
 
+      // Add deduplication check (e.g., using a unique message hash)
+      const existingMessage = await Message.findOne({
+        chat: chatId,
+        sender: senderId,
+        content: content,
+        createdAt: { $gt: new Date(Date.now() - 5000) }, // 5-second window
+      });
+
+      if (existingMessage) {
+        return; // Skip duplicate
+      }
+
       const message = new Message({
         chat: chatId,
         sender: senderId,
