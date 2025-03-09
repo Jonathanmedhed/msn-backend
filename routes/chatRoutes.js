@@ -167,4 +167,38 @@ router.get("/user/:userId", async (req, res) => {
   }
 });
 
+// Route to update a message's status (e.g., to "read")
+router.patch("/:messageId/status", async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { status } = req.body;
+
+    // Optionally validate the status value
+    const validStatuses = ["pending", "sent", "delivered", "read", "failed"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    const updatedMessage = await Message.findByIdAndUpdate(
+      messageId,
+      { status },
+      { new: true }
+    ).populate("sender", "name profilePicture");
+
+    res.status(200).json({ message: updatedMessage });
+
+    // Emit an event so that all clients in the chat room get the updated message status
+    const io = req.app.get("io");
+    if (io) {
+      io.to(updatedMessage.chat.toString()).emit(
+        "messageStatus",
+        updatedMessage
+      );
+    }
+  } catch (error) {
+    console.error("Error updating message status:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
