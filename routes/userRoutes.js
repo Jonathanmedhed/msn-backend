@@ -134,7 +134,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Route to get the main user with their contacts
+// Route to get the main user with their contacts (Testing Only)
 router.get("/main-user", async (req, res) => {
   try {
     // Find the main user
@@ -427,6 +427,15 @@ router.put("/:userId/update", async (req, res) => {
 
     if (!updatedUser) {
       return res.status(404).json({ error: "User not found" });
+    }
+
+    // Emit status change to all connected clients.
+    const io = req.app.get("io");
+    if (io) {
+      io.emit("userStatusChange", {
+        userId: updatedUser._id,
+        status: updatedUser.status,
+      });
     }
 
     res.status(200).json({
@@ -853,6 +862,28 @@ router.post("/friend-request/cancel", authenticateJWT, async (req, res) => {
   } catch (err) {
     console.error("Error canceling friend request:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// When a user updates their status
+router.put("/:userId/status", async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { status: req.body.status },
+      { new: true }
+    );
+
+    // Notify all connected clients
+    const io = req.app.get("io");
+    io.emit("userStatusChange", {
+      userId: user._id,
+      status: user.status,
+    });
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 

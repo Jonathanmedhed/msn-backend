@@ -128,6 +128,24 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("updateStatus", async ({ userId, newStatus }) => {
+    try {
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { status: newStatus },
+        { new: true }
+      );
+
+      // Broadcast to all connected clients
+      io.emit("userStatusChange", {
+        userId: user._id,
+        status: user.status,
+      });
+    } catch (error) {
+      console.error("Status update error:", error);
+    }
+  });
+
   socket.on("disconnect", () => {
     //console.log("Client disconnected:", socket.id);
   });
