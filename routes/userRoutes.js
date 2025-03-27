@@ -612,6 +612,8 @@ router.put("/:userId/add-contact", authenticateJWT, async (req, res) => {
 //Send
 router.post("/friend-request", authenticateJWT, async (req, res) => {
   try {
+    const io = req.app.get("io");
+
     const { senderId, recipientEmail } = req.body;
     if (!senderId || !recipientEmail) {
       return res
@@ -655,12 +657,36 @@ router.post("/friend-request", authenticateJWT, async (req, res) => {
     await sender.save();
     await recipient.save();
 
+    // Populate sender data for recipient's notification
+    const populatedSender = await User.findById(senderId)
+      .select("name email profilePicture status")
+      .lean();
+
+    // Emit to recipient
+    io.to(recipient._id.toString()).emit("newFriendRequest", {
+      request: {
+        _id: populatedSender._id,
+        name: populatedSender.name,
+        profilePicture: populatedSender.profilePicture,
+        status: populatedSender.status,
+        email: populatedSender.email,
+      },
+      type: "received",
+    });
+
+    // Emit to sender (update their sent requests list)
+    io.to(senderId).emit("newFriendRequest", {
+      request: recipient._id,
+      type: "sent",
+    });
+
     res.status(200).json({ message: "Friend request sent." });
   } catch (error) {
     console.error("Error sending friend request:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 //Respond
 router.post(
   "/:userId/respond-friend-request",
@@ -719,13 +745,64 @@ router.post(
   }
 );
 
-// Accept Friend Request Route
+// Accept Friend Request Routes
+router.post("/:userId/accept-request", async (req, res) => {
+  try {
+    const acceptor = await User.findByIdAndUpdate(
+      req.params.userId,
+      {
+        $addToSet: { contacts: req.body.requesterId },
+        $pull: { friendRequestsReceived: req.body.requesterId },
+      },
+      { new: true }
+    );
+
+    const requester = await User.findByIdAndUpdate(
+      req.body.requesterId,
+      {
+        $addToSet: { contacts: req.params.userId },
+        $pull: { friendRequestsSent: req.params.userId },
+      },
+      { new: true }
+    );
+
+    // Populate contact data
+    const populatedAcceptor = await User.findById(acceptor._id).populate(
+      "contacts",
+      "name status profilePicture"
+    );
+    const populatedRequester = await User.findById(requester._id).populate(
+      "contacts",
+      "name status profilePicture"
+    );
+
+    const io = req.app.get("io");
+
+    // Emit to both users
+    io.to(acceptor._id.toString()).emit("friendRequestAccepted", {
+      newContact: populatedAcceptor.contacts.find(
+        (c) => c._id.toString() === req.body.requesterId
+      ),
+      removedRequestId: req.body.requesterId,
+    });
+
+    io.to(requester._id.toString()).emit("friendRequestAccepted", {
+      newContact: populatedRequester.contacts.find(
+        (c) => c._id.toString() === req.params.userId
+      ),
+      removedRequestId: req.params.userId,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post("/friend-request/accept", authenticateJWT, async (req, res) => {
   try {
     const recipientId = req.user.userId;
     const { senderId } = req.body;
-
-    // ... existing validation checks ...
 
     // Add each other to contacts (existing code)
     if (!recipient.contacts.includes(senderId)) {
@@ -768,6 +845,29 @@ router.post("/friend-request/accept", authenticateJWT, async (req, res) => {
         io.to(recipientId).emit("newChat", populatedChat);
       }
     }
+
+    const updatedRecipient = await User.findById(recipientId)
+      .populate("contacts", "name status profilePicture")
+      .populate("friendRequestsReceived");
+
+    const updatedSender = await User.findById(senderId)
+      .populate("contacts", "name status profilePicture")
+      .populate("friendRequestsSent");
+
+    const io = req.app.get("io");
+
+    // Emit real-time updates
+    io.to(senderId).emit("friendRequestUpdate", {
+      type: "accepted",
+      recipient: updatedRecipient,
+      newChat: existingChat || populatedChat,
+    });
+
+    io.to(recipientId).emit("friendRequestUpdate", {
+      type: "accepted",
+      sender: updatedSender,
+      newChat: existingChat || populatedChat,
+    });
 
     res.status(200).json({
       message: "Friend request accepted.",
@@ -815,6 +915,18 @@ router.post("/friend-request/reject", authenticateJWT, async (req, res) => {
     await recipient.save();
     await sender.save();
 
+    const io = req.app.get("io");
+
+    io.to(senderId).emit("friendRequestUpdate", {
+      type: "rejected",
+      recipientId: recipientId,
+    });
+
+    io.to(recipientId).emit("friendRequestUpdate", {
+      type: "rejected",
+      senderId: senderId,
+    });
+
     res.status(200).json({ message: "Friend request rejected." });
   } catch (err) {
     console.error("Error rejecting friend request:", err);
@@ -857,6 +969,18 @@ router.post("/friend-request/cancel", authenticateJWT, async (req, res) => {
 
     await sender.save();
     await recipient.save();
+
+    const io = req.app.get("io");
+
+    io.to(senderId).emit("friendRequestUpdate", {
+      type: "cancelled",
+      recipientId: recipientId,
+    });
+
+    io.to(recipientId).emit("friendRequestUpdate", {
+      type: "cancelled",
+      senderId: senderId,
+    });
 
     res.status(200).json({ message: "Friend request canceled." });
   } catch (err) {

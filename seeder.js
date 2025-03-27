@@ -62,7 +62,7 @@ async function seedUsers() {
       phoneNumber: "123-456-7890",
       dateOfBirth: new Date(1990, 1, 1),
       gender: "Male",
-      contacts: insertedUsers.map((user) => user._id), // Set contacts here
+      contacts: /**insertedUsers.map((user) => user._id)*/ [], // Set contacts here
     });
 
     await mainUser.save();

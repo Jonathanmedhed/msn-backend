@@ -146,6 +146,11 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("joinUser", (userId) => {
+    socket.join(userId);
+    console.log(`User ${userId} joined their presence channel`);
+  });
+
   socket.on("disconnect", () => {
     //console.log("Client disconnected:", socket.id);
   });
