@@ -15,6 +15,7 @@ cloudinary.config({
 });
 
 const jwt = require("jsonwebtoken");
+const Chat = require("../models/Chat");
 
 // Middleware to authenticate JWT token
 const authenticateJWT = (req, res, next) => {
@@ -687,305 +688,128 @@ router.post("/friend-request", authenticateJWT, async (req, res) => {
   }
 });
 
-//Respond
-router.post(
-  "/:userId/respond-friend-request",
-  authenticateJWT,
-  async (req, res) => {
-    try {
-      const { userId } = req.params; // Should match the logged in user's ID (recipient)
-      const { senderId, action } = req.body; // Action: "accept" or "reject"
-      const recipientId = req.user.userId;
+// routes/userRoutes.js
+router.post("/friend-requests/:action", authenticateJWT, async (req, res) => {
+  let action;
 
-      if (userId !== recipientId) {
-        return res.status(403).json({ error: "Not authorized." });
-      }
+  const io = req.app.get("io");
 
-      const recipient = await User.findById(recipientId);
-      const sender = await User.findById(senderId);
-
-      if (!recipient || !sender) {
-        return res.status(404).json({ error: "User not found." });
-      }
-
-      // Check if a friend request exists
-      if (!recipient.friendRequestsReceived.includes(senderId)) {
-        return res
-          .status(400)
-          .json({ error: "No friend request from this user." });
-      }
-
-      // Remove friend request from both arrays
-      recipient.friendRequestsReceived =
-        recipient.friendRequestsReceived.filter(
-          (id) => id.toString() !== senderId
-        );
-      sender.friendRequestsSent = sender.friendRequestsSent.filter(
-        (id) => id.toString() !== recipientId
-      );
-
-      if (action === "accept") {
-        // Add each other to contacts if not already added
-        if (!recipient.contacts.includes(senderId)) {
-          recipient.contacts.push(senderId);
-        }
-        if (!sender.contacts.includes(recipientId)) {
-          sender.contacts.push(recipientId);
-        }
-      }
-
-      await recipient.save();
-      await sender.save();
-
-      res.status(200).json({ message: `Friend request ${action}ed.` });
-    } catch (error) {
-      console.error("Error responding to friend request:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// Accept Friend Request Routes
-router.post("/:userId/accept-request", async (req, res) => {
   try {
-    const acceptor = await User.findByIdAndUpdate(
-      req.params.userId,
-      {
-        $addToSet: { contacts: req.body.requesterId },
-        $pull: { friendRequestsReceived: req.body.requesterId },
-      },
-      { new: true }
-    );
-
-    const requester = await User.findByIdAndUpdate(
-      req.body.requesterId,
-      {
-        $addToSet: { contacts: req.params.userId },
-        $pull: { friendRequestsSent: req.params.userId },
-      },
-      { new: true }
-    );
-
-    // Populate contact data
-    const populatedAcceptor = await User.findById(acceptor._id).populate(
-      "contacts",
-      "name status profilePicture"
-    );
-    const populatedRequester = await User.findById(requester._id).populate(
-      "contacts",
-      "name status profilePicture"
-    );
-
-    const io = req.app.get("io");
-
-    // Emit to both users
-    io.to(acceptor._id.toString()).emit("friendRequestAccepted", {
-      newContact: populatedAcceptor.contacts.find(
-        (c) => c._id.toString() === req.body.requesterId
-      ),
-      removedRequestId: req.body.requesterId,
-    });
-
-    io.to(requester._id.toString()).emit("friendRequestAccepted", {
-      newContact: populatedRequester.contacts.find(
-        (c) => c._id.toString() === req.params.userId
-      ),
-      removedRequestId: req.params.userId,
-    });
-
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post("/friend-request/accept", authenticateJWT, async (req, res) => {
-  try {
-    const recipientId = req.user.userId;
+    action = req.params.action; // 'accept' or 'reject'
     const { senderId } = req.body;
-
-    // Add each other to contacts (existing code)
-    if (!recipient.contacts.includes(senderId)) {
-      recipient.contacts.push(senderId);
-    }
-    if (!sender.contacts.includes(recipientId)) {
-      sender.contacts.push(recipientId);
-    }
-
-    await recipient.save();
-    await sender.save();
-
-    // Create chat if it doesn't exist
-    const existingChat = await Chat.findOne({
-      participants: {
-        $all: [senderId, recipientId],
-        $size: 2,
-      },
-    });
-
-    if (!existingChat) {
-      const newChat = new Chat({
-        participants: [senderId, recipientId],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        messages: [],
-      });
-
-      await newChat.save();
-
-      // Optional: Populate participants in response
-      const populatedChat = await Chat.findById(newChat._id)
-        .populate("participants", "name avatar")
-        .lean();
-
-      // Optional: Emit socket event for real-time update
-      const io = req.app.get("io");
-      if (io) {
-        io.to(senderId).emit("newChat", populatedChat);
-        io.to(recipientId).emit("newChat", populatedChat);
-      }
-    }
-
-    const updatedRecipient = await User.findById(recipientId)
-      .populate("contacts", "name status profilePicture")
-      .populate("friendRequestsReceived");
-
-    const updatedSender = await User.findById(senderId)
-      .populate("contacts", "name status profilePicture")
-      .populate("friendRequestsSent");
-
-    const io = req.app.get("io");
-
-    // Emit real-time updates
-    io.to(senderId).emit("friendRequestUpdate", {
-      type: "accepted",
-      recipient: updatedRecipient,
-      newChat: existingChat || populatedChat,
-    });
-
-    io.to(recipientId).emit("friendRequestUpdate", {
-      type: "accepted",
-      sender: updatedSender,
-      newChat: existingChat || populatedChat,
-    });
-
-    res.status(200).json({
-      message: "Friend request accepted.",
-      chat: existingChat || populatedChat,
-    });
-  } catch (err) {
-    console.error("Error accepting friend request:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Reject Friend Request Route
-router.post("/friend-request/reject", authenticateJWT, async (req, res) => {
-  try {
-    // The logged in user is the recipient
     const recipientId = req.user.userId;
-    const { senderId } = req.body; // The sender who sent the friend request
+
+    // Validate input
+    if (!["accept", "reject"].includes(action)) {
+      return res.status(400).json({ error: "Invalid action" });
+    }
 
     if (!senderId) {
-      return res.status(400).json({ error: "Sender ID is required." });
+      return res.status(400).json({ error: "Sender ID required" });
     }
 
-    const recipient = await User.findById(recipientId);
-    const sender = await User.findById(senderId);
+    // Find and validate users
+    const [recipient, sender] = await Promise.all([
+      User.findById(recipientId),
+      User.findById(senderId),
+    ]);
 
     if (!recipient || !sender) {
-      return res.status(404).json({ error: "User not found." });
+      return res.status(404).json({ error: "User not found" });
     }
 
-    // Check if the friend request exists
+    // Verify request exists
     if (!recipient.friendRequestsReceived.includes(senderId)) {
-      return res
-        .status(400)
-        .json({ error: "No friend request from this user exists." });
+      return res.status(400).json({ error: "No pending friend request" });
     }
 
-    // Remove friend request from both arrays
-    recipient.friendRequestsReceived = recipient.friendRequestsReceived.filter(
-      (id) => id.toString() !== senderId
-    );
-    sender.friendRequestsSent = sender.friendRequestsSent.filter(
-      (id) => id.toString() !== recipientId
-    );
+    const updates = [
+      // Remove from requests using atomic operations
+      User.updateOne(
+        { _id: recipientId },
+        { $pull: { friendRequestsReceived: senderId } }
+      ),
+      User.updateOne(
+        { _id: senderId },
+        { $pull: { friendRequestsSent: recipientId } }
+      ),
+    ];
 
-    await recipient.save();
-    await sender.save();
+    let populatedChat;
+    if (action === "accept") {
+      // Add contacts using atomic operations
+      updates.push(
+        User.updateOne(
+          { _id: recipientId },
+          { $addToSet: { contacts: senderId } }
+        ),
+        User.updateOne(
+          { _id: senderId },
+          { $addToSet: { contacts: recipientId } }
+        )
+      );
 
-    const io = req.app.get("io");
+      // Chat creation
+      const chat = await Chat.findOneAndUpdate(
+        {
+          participants: {
+            $all: [
+              { $elemMatch: { $eq: senderId } },
+              { $elemMatch: { $eq: recipientId } },
+            ],
+            $size: 2,
+          },
+        },
+        {
+          $setOnInsert: {
+            // Only set these fields on insert
+            participants: [senderId, recipientId],
+            messages: [],
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+        }
+      ).populate("participants", "name profilePicture");
 
-    io.to(senderId).emit("friendRequestUpdate", {
-      type: "rejected",
-      recipientId: recipientId,
-    });
+      populatedChat = chat;
 
-    io.to(recipientId).emit("friendRequestUpdate", {
-      type: "rejected",
-      senderId: senderId,
-    });
+      // Get contact data AFTER database updates
+      const [newContactForRecipient, newContactForSender] = await Promise.all([
+        User.findById(senderId).select("name profilePicture status"),
+        User.findById(recipientId).select("name profilePicture status"),
+      ]);
 
-    res.status(200).json({ message: "Friend request rejected." });
-  } catch (err) {
-    console.error("Error rejecting friend request:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Cancel Sent Friend Request Route (initiated by the sender)
-router.post("/friend-request/cancel", authenticateJWT, async (req, res) => {
-  try {
-    // The logged in user is the sender
-    const senderId = req.user.userId;
-    const { recipientId } = req.body; // The recipient who received the friend request
-
-    if (!recipientId) {
-      return res.status(400).json({ error: "Recipient ID is required." });
+      // Emit events
+      io.to(recipientId).emit("friendRequestAccepted", {
+        newContact: newContactForSender,
+        removedRequestId: senderId,
+      });
+      io.to(senderId).emit("friendRequestAccepted", {
+        newContact: newContactForRecipient,
+        removedRequestId: recipientId,
+      });
     }
 
-    const sender = await User.findById(senderId);
-    const recipient = await User.findById(recipientId);
+    await Promise.all(updates);
 
-    if (!sender || !recipient) {
-      return res.status(404).json({ error: "User not found." });
-    }
+    // Define emitData before using it
+    const emitData = {
+      recipientId,
+      senderId,
+      ...(action === "accept" && { chat: populatedChat }),
+    };
 
-    // Check if a friend request exists
-    if (!sender.friendRequestsSent.includes(recipientId)) {
-      return res
-        .status(400)
-        .json({ error: "No friend request to this user exists." });
-    }
-
-    // Remove friend request from both arrays
-    sender.friendRequestsSent = sender.friendRequestsSent.filter(
-      (id) => id.toString() !== recipientId
-    );
-    recipient.friendRequestsReceived = recipient.friendRequestsReceived.filter(
-      (id) => id.toString() !== senderId
-    );
-
-    await sender.save();
-    await recipient.save();
-
-    const io = req.app.get("io");
-
-    io.to(senderId).emit("friendRequestUpdate", {
-      type: "cancelled",
-      recipientId: recipientId,
+    res.json({
+      success: true,
+      message: `Friend request ${action}ed`,
+      ...emitData,
     });
-
-    io.to(recipientId).emit("friendRequestUpdate", {
-      type: "cancelled",
-      senderId: senderId,
-    });
-
-    res.status(200).json({ message: "Friend request canceled." });
-  } catch (err) {
-    console.error("Error canceling friend request:", err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error(`Friend request ${action} error:`, error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
