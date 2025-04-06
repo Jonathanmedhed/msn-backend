@@ -56,9 +56,7 @@ router.post("/login", async (req, res) => {
     }
 
     // Generate token with user's id
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1000h",
-    });
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
 
     // Respond with token and user data
     res.status(200).json({
@@ -83,6 +81,13 @@ router.get("/me", authenticateJWT, async (req, res) => {
         "friendRequestsReceived",
         "name email pictures customMessage status bio"
       )
+      .populate({
+        path: "chats",
+        populate: {
+          path: "participants",
+          select: "name profilePicture status",
+        },
+      })
       .exec();
 
     if (!user) {
@@ -772,9 +777,21 @@ router.post("/friend-requests/:action", authenticateJWT, async (req, res) => {
           new: true,
           setDefaultsOnInsert: true,
         }
-      ).populate("participants", "name profilePicture");
+      ).populate({
+        path: "participants",
+        select: "name profilePicture status",
+        match: { _id: { $in: [senderId, recipientId] } },
+      });
 
       populatedChat = chat;
+
+      updates.push(
+        User.updateOne(
+          { _id: recipientId },
+          { $addToSet: { chats: chat._id } }
+        ),
+        User.updateOne({ _id: senderId }, { $addToSet: { chats: chat._id } })
+      );
 
       // Get contact data AFTER database updates
       const [newContactForRecipient, newContactForSender] = await Promise.all([
@@ -786,10 +803,13 @@ router.post("/friend-requests/:action", authenticateJWT, async (req, res) => {
       io.to(recipientId).emit("friendRequestAccepted", {
         newContact: newContactForSender,
         removedRequestId: senderId,
+        chat,
       });
+
       io.to(senderId).emit("friendRequestAccepted", {
         newContact: newContactForRecipient,
         removedRequestId: recipientId,
+        chat,
       });
     }
 

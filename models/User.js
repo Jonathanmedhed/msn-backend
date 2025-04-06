@@ -31,6 +31,12 @@ const userSchema = new mongoose.Schema({
   friendRequestsReceived: [
     { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   ],
+  chats: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Chat",
+    },
+  ],
 });
 
 userSchema.virtual("id").get(function () {
