@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const { authenticateUser } = require("../middleware/auth");
 const User = require("../models/User");
 
@@ -29,12 +29,10 @@ router.post("/change-password", authenticateUser, async (req, res) => {
       .json({ success: true, message: "Password changed successfully." });
   } catch (error) {
     console.error("Error in change-password route:", error);
-    return res
-      .status(200)
-      .json({
-        success: false,
-        message: "Server error. Please try again later.",
-      });
+    return res.status(200).json({
+      success: false,
+      message: "Server error. Please try again later.",
+    });
   }
 });
 
