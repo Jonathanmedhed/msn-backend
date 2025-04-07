@@ -25,7 +25,7 @@ app.use((req, res, next) => {
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "https://msn-frontend-mu.vercel.app/",
     credentials: true,
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     allowedHeaders: "Content-Type,Authorization",
@@ -37,7 +37,7 @@ app.use(express.json());
 // Socket.IO Configuration
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: "https://msn-frontend-mu.vercel.app/",
     methods: ["GET", "POST"],
     credentials: true,
   },
